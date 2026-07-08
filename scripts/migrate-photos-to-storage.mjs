@@ -6,6 +6,17 @@ const SUPABASE_URL =
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'story-photos';
 const DRY_RUN = process.argv.includes('--dry-run');
+const args = Object.fromEntries(
+  process.argv
+    .slice(2)
+    .filter((arg) => arg.startsWith('--') && arg.includes('='))
+    .map((arg) => {
+      const [key, ...value] = arg.slice(2).split('=');
+      return [key, value.join('=')];
+    }),
+);
+const ONLY_ID = args.only || '';
+const PHOTO_TIMEOUT_MS = Number(args['photo-timeout-ms'] || 180000);
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
   console.error('需要设置 SUPABASE_SERVICE_ROLE_KEY，必要时也可设置 SUPABASE_URL。');
@@ -18,18 +29,26 @@ const headers = {
 };
 
 async function supabase(path, options = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      ...headers,
-      Accept: 'application/json',
-      ...(options.headers || {}),
-    },
-  });
-  const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new Error(json?.message || text || `HTTP ${res.status}`);
-  return json;
+  const timeoutMs = options.timeoutMs || 120000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...headers,
+        Accept: 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : null;
+    if (!res.ok) throw new Error(json?.message || text || `HTTP ${res.status}`);
+    return json;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function normalizePhotos(photos) {
@@ -74,12 +93,33 @@ async function upload(blob, path) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
 }
 
-const rows = await supabase('story?select=id,date,photos&order=date.desc,created_at.desc');
+console.log(ONLY_ID ? `开始检查指定记录 story ${ONLY_ID}...` : '开始扫描 story 记录...');
+const listPath = ONLY_ID
+  ? `story?id=eq.${encodeURIComponent(ONLY_ID)}&select=id,date`
+  : 'story?select=id,date&order=date.desc,created_at.desc';
+const rows = await supabase(listPath, { timeoutMs: 30000 });
 let changedRows = 0;
 let movedPhotos = 0;
 
-for (const row of rows || []) {
-  const photos = normalizePhotos(row.photos);
+console.log(`找到 ${rows?.length || 0} 条记录，开始逐条检查照片。`);
+
+for (let rowIndex = 0; rowIndex < (rows || []).length; rowIndex++) {
+  const row = rows[rowIndex];
+  console.log(`检查第 ${rowIndex + 1}/${rows.length} 条：story ${row.id} (${row.date || '无日期'})`);
+
+  let fullRow;
+  try {
+    const data = await supabase(
+      `story?id=eq.${encodeURIComponent(row.id)}&select=id,date,photos`,
+      { timeoutMs: PHOTO_TIMEOUT_MS },
+    );
+    fullRow = data?.[0] || row;
+  } catch (error) {
+    console.warn(`跳过 story ${row.id}：照片字段读取超时或失败。${error.message || error}`);
+    continue;
+  }
+
+  const photos = normalizePhotos(fullRow.photos);
   let changed = false;
 
   for (let i = 0; i < photos.length; i++) {
@@ -87,8 +127,8 @@ for (const row of rows || []) {
     changed = true;
 
     const blob = dataUrlToBlob(photos[i].url);
-    const path = `${row.date || 'undated'}/${row.id}-${i}.${extension(blob.type)}`;
-    console.log(`${DRY_RUN ? '[dry-run] ' : ''}迁移 story ${row.id} 第 ${i + 1} 张照片 -> ${path}`);
+    const path = `${fullRow.date || 'undated'}/${fullRow.id}-${i}.${extension(blob.type)}`;
+    console.log(`${DRY_RUN ? '[dry-run] ' : ''}迁移 story ${fullRow.id} 第 ${i + 1} 张照片 -> ${path}`);
 
     if (!DRY_RUN) photos[i].url = await upload(blob, path);
     movedPhotos++;
@@ -97,7 +137,7 @@ for (const row of rows || []) {
   if (changed) {
     changedRows++;
     if (!DRY_RUN) {
-      await supabase(`story?id=eq.${encodeURIComponent(row.id)}`, {
+      await supabase(`story?id=eq.${encodeURIComponent(fullRow.id)}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
