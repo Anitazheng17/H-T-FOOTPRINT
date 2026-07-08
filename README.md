@@ -45,6 +45,26 @@ alter table story
 
 Because this is a static frontend, the built-in account list is a gate for the page experience and audit labels. For strong server-side security, move credential verification into Supabase Auth, an Edge Function, or your own backend, and pair it with Row Level Security policies.
 
+## Photo storage
+
+New photos are uploaded to Supabase Storage bucket `story-photos`. The `story.photos` field stores only lightweight metadata:
+
+```json
+[{ "url": "https://...", "caption": "..." }]
+```
+
+Run `supabase-storage-setup.sql` once in the Supabase SQL editor to create the bucket and policies. Existing base64 photos can then be migrated with a service role key:
+
+```bash
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY node scripts/migrate-photos-to-storage.mjs
+```
+
+To preview what would move without changing data:
+
+```bash
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY node scripts/migrate-photos-to-storage.mjs --dry-run
+```
+
 ## Preview option 1: GitHub Pages, recommended for Codex web users
 
 Use this option if you are using Codex in the browser and cannot see a **Preview** or **Ports** panel.
