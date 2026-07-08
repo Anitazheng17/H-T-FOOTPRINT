@@ -12,6 +12,39 @@ index.html
 
 You do not need to install a frontend framework to preview it.
 
+## Login and record ownership
+
+The page now requires login before entering the timeline. A session is kept in the browser for 30 days, then the user must log in again. The static demo accounts are configured in `index.html` in the `USERS` constant:
+
+```text
+howie / howie520
+tata / tata520
+```
+
+After the password step, the page randomly asks one verification question from that user's question bank.
+
+New records are saved with creator metadata, including username, display name, role, device, IP, and browser user agent. To persist those fields in Supabase, add these columns to the existing `story` table:
+
+```sql
+alter table story
+  add column if not exists photos jsonb default '[]'::jsonb,
+  add column if not exists quote text,
+  add column if not exists created_by text,
+  add column if not exists created_by_name text,
+  add column if not exists created_by_role text,
+  add column if not exists created_device text,
+  add column if not exists created_ip text,
+  add column if not exists created_user_agent text,
+  add column if not exists updated_by text,
+  add column if not exists updated_by_name text,
+  add column if not exists updated_by_role text,
+  add column if not exists updated_device text,
+  add column if not exists updated_ip text,
+  add column if not exists updated_user_agent text;
+```
+
+Because this is a static frontend, the built-in account list is a gate for the page experience and audit labels. For strong server-side security, move credential verification into Supabase Auth, an Edge Function, or your own backend, and pair it with Row Level Security policies.
+
 ## Preview option 1: GitHub Pages, recommended for Codex web users
 
 Use this option if you are using Codex in the browser and cannot see a **Preview** or **Ports** panel.
