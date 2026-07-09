@@ -1,0 +1,15 @@
+alter table story
+  add column if not exists photos jsonb default '[]'::jsonb,
+  add column if not exists quote text,
+  add column if not exists created_by text,
+  add column if not exists created_by_name text,
+  add column if not exists created_by_role text,
+  add column if not exists created_device text,
+  add column if not exists created_ip text,
+  add column if not exists created_user_agent text,
+  add column if not exists updated_by text,
+  add column if not exists updated_by_name text,
+  add column if not exists updated_by_role text,
+  add column if not exists updated_device text,
+  add column if not exists updated_ip text,
+  add column if not exists updated_user_agent text;

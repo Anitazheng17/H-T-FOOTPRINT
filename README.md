@@ -43,6 +43,8 @@ alter table story
   add column if not exists updated_user_agent text;
 ```
 
+The same SQL is also saved in `supabase-story-schema.sql`.
+
 Because this is a static frontend, the built-in account list is a gate for the page experience and audit labels. For strong server-side security, move credential verification into Supabase Auth, an Edge Function, or your own backend, and pair it with Row Level Security policies.
 
 ## Photo storage
